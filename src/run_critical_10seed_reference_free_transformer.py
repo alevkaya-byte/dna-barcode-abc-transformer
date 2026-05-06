@@ -1,32 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon May  4 18:54:30 2026
-
-@author: kaya-
-"""
-
-# -*- coding: utf-8 -*-
-"""
 run_critical_10seed_reference_free_transformer.py
 
-Critical 10-seed experiments for the DNA barcode/index library manuscript.
+Runs the critical 10-seed experiments for the DNA barcode/index library study.
 
-Runs:
-1) L=12, N=64
-2) L=12, N=128
+Experiment settings:
+- L=12, N=64
+- L=12, N=128
 
-Each setting is evaluated over 10 independent seeds with:
+Each setting is evaluated over 10 independent seeds using:
 - Proposed reference-free Transformer candidate generation + ABC
 - ABC-only control
 
-Required existing script in the same folder:
-barcode_abc_reference_free_transformer.py
+Required script:
+- src/barcode_abc_reference_free_transformer.py
 
-Spyder run:
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/run_critical_10seed_reference_free_transformer.py',
-    wdir='C:/Users/kaya-/Desktop/ABC'
-)
+Example command:
+python src/run_critical_10seed_reference_free_transformer.py
 """
 
 import json
@@ -34,6 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -41,11 +32,16 @@ import pandas as pd
 # Paths
 # ============================================================
 
-BASE_DIR = Path(r"C:/Users/kaya-/Desktop/ABC")
-MAIN_SCRIPT = BASE_DIR / "barcode_abc_reference_free_transformer.py"
+BASE_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = BASE_DIR / "src"
+RESULTS_DIR = BASE_DIR / "results"
+RAW_DIR = RESULTS_DIR / "raw_runs" / "critical_10seed"
 
-# Main output summary folder
-SUMMARY_DIR = BASE_DIR / "critical_10seed_summaries"
+MAIN_SCRIPT = SRC_DIR / "barcode_abc_reference_free_transformer.py"
+
+SUMMARY_DIR = RESULTS_DIR / "critical_10seed_summaries"
+
+RAW_DIR.mkdir(parents=True, exist_ok=True)
 SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -79,7 +75,6 @@ COMMON_ARGS = {
     "filter_sample_size": 100,
 }
 
-# If True, completed output folders are not re-run.
 SKIP_EXISTING = True
 
 
@@ -87,9 +82,9 @@ SKIP_EXISTING = True
 # Helpers
 # ============================================================
 
-def run_one_experiment(length, size, seed):
+def run_one_experiment(length: int, size: int, seed: int) -> Path:
     out_name = f"critical10_reference_free_transformer_L{length}_N{size}_seed_{seed}"
-    out_dir = BASE_DIR / out_name
+    out_dir = RAW_DIR / out_name
 
     expected_files = [
         out_dir / "best_summary.json",
@@ -99,7 +94,7 @@ def run_one_experiment(length, size, seed):
         out_dir / "pairwise_distances.csv",
     ]
 
-    if SKIP_EXISTING and all(p.exists() for p in expected_files):
+    if SKIP_EXISTING and all(path.exists() for path in expected_files):
         print(f"[SKIP] Existing complete result found: {out_name}")
         return out_dir
 
@@ -115,12 +110,12 @@ def run_one_experiment(length, size, seed):
         "--filter-sample-size", str(COMMON_ARGS["filter_sample_size"]),
         "--run-abc-control",
         "--seed", str(seed),
-        "--out", out_name,
+        "--out", str(out_dir),
     ]
 
     print("=" * 80)
     print(f"Running L={length}, N={size}, seed={seed}")
-    print("Output:", out_name)
+    print(f"Output folder: {out_dir}")
     print("=" * 80)
 
     subprocess.run(cmd, cwd=str(BASE_DIR), check=True)
@@ -128,94 +123,133 @@ def run_one_experiment(length, size, seed):
     return out_dir
 
 
-def read_json(path):
-    if not path.exists():
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def safe_get(d, key, default=None):
-    return d.get(key, default) if isinstance(d, dict) else default
-
-
-def read_last_log_metrics(path):
+def read_json(path: Path) -> dict:
     if not path.exists():
         return {}
 
-    df = pd.read_csv(path)
-    if df.empty:
-        return {}
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
 
-    last = df.iloc[-1].to_dict()
 
-    # Flexible column handling
+def safe_get(data: dict, key: str, default=np.nan):
+    return data.get(key, default) if isinstance(data, dict) else default
+
+
+def read_proposed_summary(out_dir: Path) -> dict:
+    summary = read_json(out_dir / "best_summary.json")
+
+    best = summary.get("best_metrics", {})
+    pool = summary.get("candidate_pool_summary", {})
+
+    runtime_seconds = summary.get("runtime_seconds", np.nan)
+    pool_runtime = pool.get("runtime_total_seconds", np.nan)
+
+    if pd.isna(runtime_seconds) or pd.isna(pool_runtime):
+        total_runtime = np.nan
+    else:
+        total_runtime = runtime_seconds + pool_runtime
+
     return {
-        "fitness": last.get("best_fitness", last.get("fitness", None)),
-        "min_hamming": last.get("min_hamming", last.get("minD", None)),
-        "avg_hamming": last.get("avg_hamming", last.get("avgD", None)),
-        "collision_pairs_radius1": last.get(
-            "collision_pairs_radius1",
-            last.get("coll", last.get("collision", None)),
-        ),
+        "method": "Proposed",
+        "fitness": safe_get(best, "fitness"),
+        "min_hamming": safe_get(best, "min_hamming"),
+        "avg_hamming": safe_get(best, "avg_hamming"),
+        "gc_penalty": safe_get(best, "gc_penalty"),
+        "homopolymer_penalty": safe_get(best, "homopolymer_penalty"),
+        "collision_pairs_radius1": safe_get(best, "collision_pairs_radius1"),
+        "duplicate_count": safe_get(best, "duplicate_count"),
+        "kmer_entropy": safe_get(best, "kmer_entropy"),
+        "valid_gc_fraction": safe_get(best, "valid_gc_fraction"),
+        "valid_hp_fraction": safe_get(best, "valid_hp_fraction"),
+        "runtime_seconds": runtime_seconds,
+        "candidate_pool_runtime_seconds": pool_runtime,
+        "total_runtime_seconds": total_runtime,
     }
 
 
-def collect_one_result(out_dir, length, size, seed):
+def read_abc_only_summary(out_dir: Path) -> dict:
+    comparison_path = out_dir / "comparison_summary.csv"
+    log_path = out_dir / "run_log_abc_only_control.csv"
+
+    if comparison_path.exists():
+        df = pd.read_csv(comparison_path)
+
+        if "method" in df.columns:
+            mask = df["method"].astype(str).str.lower().str.contains("abc")
+            abc_rows = df[mask]
+
+            if len(abc_rows) > 0:
+                row = abc_rows.iloc[0].to_dict()
+
+                return {
+                    "method": "ABC-only",
+                    "fitness": row.get("fitness", np.nan),
+                    "min_hamming": row.get("min_hamming", np.nan),
+                    "avg_hamming": row.get("avg_hamming", np.nan),
+                    "gc_penalty": row.get("gc_penalty", np.nan),
+                    "homopolymer_penalty": row.get("homopolymer_penalty", np.nan),
+                    "collision_pairs_radius1": row.get("collision_pairs_radius1", np.nan),
+                    "duplicate_count": row.get("duplicate_count", np.nan),
+                    "kmer_entropy": row.get("kmer_entropy", np.nan),
+                    "valid_gc_fraction": row.get("valid_gc_fraction", np.nan),
+                    "valid_hp_fraction": row.get("valid_hp_fraction", np.nan),
+                    "runtime_seconds": row.get("runtime_seconds", np.nan),
+                    "candidate_pool_runtime_seconds": np.nan,
+                    "total_runtime_seconds": row.get("runtime_seconds", np.nan),
+                }
+
+    if not log_path.exists():
+        raise FileNotFoundError(f"Missing ABC-only log: {log_path}")
+
+    df = pd.read_csv(log_path)
+
+    if df.empty:
+        raise ValueError(f"Empty ABC-only log: {log_path}")
+
+    row = df.iloc[-1].to_dict()
+
+    return {
+        "method": "ABC-only",
+        "fitness": row.get("best_fitness", row.get("fitness", np.nan)),
+        "min_hamming": row.get("min_hamming", row.get("minD", np.nan)),
+        "avg_hamming": row.get("avg_hamming", row.get("avgD", np.nan)),
+        "gc_penalty": np.nan,
+        "homopolymer_penalty": np.nan,
+        "collision_pairs_radius1": row.get(
+            "collision_pairs_radius1",
+            row.get("coll", row.get("collision", np.nan)),
+        ),
+        "duplicate_count": np.nan,
+        "kmer_entropy": np.nan,
+        "valid_gc_fraction": np.nan,
+        "valid_hp_fraction": np.nan,
+        "runtime_seconds": np.nan,
+        "candidate_pool_runtime_seconds": np.nan,
+        "total_runtime_seconds": np.nan,
+    }
+
+
+def collect_one_result(out_dir: Path, length: int, size: int, seed: int) -> list:
     rows = []
 
-    # Proposed summary
-    proposed_summary = read_json(out_dir / "best_summary.json")
+    proposed = read_proposed_summary(out_dir)
+    abc_only = read_abc_only_summary(out_dir)
 
-    rows.append({
-        "length": length,
-        "size": size,
-        "seed": seed,
-        "method": "Proposed",
-        "fitness": safe_get(proposed_summary, "fitness"),
-        "min_hamming": safe_get(proposed_summary, "min_hamming"),
-        "avg_hamming": safe_get(proposed_summary, "avg_hamming"),
-        "gc_penalty": safe_get(proposed_summary, "gc_penalty"),
-        "homopolymer_penalty": safe_get(proposed_summary, "homopolymer_penalty"),
-        "collision_pairs_radius1": safe_get(proposed_summary, "collision_pairs_radius1"),
-        "duplicate_count": safe_get(proposed_summary, "duplicate_count"),
-        "kmer_entropy": safe_get(proposed_summary, "kmer_entropy"),
-        "valid_gc_fraction": safe_get(proposed_summary, "valid_gc_fraction"),
-        "valid_hp_fraction": safe_get(proposed_summary, "valid_hp_fraction"),
-        "runtime_seconds": safe_get(proposed_summary, "runtime_seconds"),
-        "seed_pool_runtime_seconds": safe_get(proposed_summary, "seed_pool_runtime_seconds"),
-        "total_runtime_seconds": safe_get(proposed_summary, "total_runtime_seconds"),
-        "output_folder": out_dir.name,
-    })
-
-    # ABC-only control from run log
-    abc_metrics = read_last_log_metrics(out_dir / "run_log_abc_only_control.csv")
-
-    rows.append({
-        "length": length,
-        "size": size,
-        "seed": seed,
-        "method": "ABC-only",
-        "fitness": abc_metrics.get("fitness"),
-        "min_hamming": abc_metrics.get("min_hamming"),
-        "avg_hamming": abc_metrics.get("avg_hamming"),
-        "gc_penalty": None,
-        "homopolymer_penalty": None,
-        "collision_pairs_radius1": abc_metrics.get("collision_pairs_radius1"),
-        "duplicate_count": None,
-        "kmer_entropy": None,
-        "valid_gc_fraction": None,
-        "valid_hp_fraction": None,
-        "runtime_seconds": None,
-        "seed_pool_runtime_seconds": None,
-        "total_runtime_seconds": None,
-        "output_folder": out_dir.name,
-    })
+    for row in [proposed, abc_only]:
+        row.update(
+            {
+                "length": length,
+                "size": size,
+                "seed": seed,
+                "output_folder": str(out_dir.relative_to(BASE_DIR)),
+            }
+        )
+        rows.append(row)
 
     return rows
 
 
-def make_group_summary(all_runs_df):
+def make_group_summary(all_runs_df: pd.DataFrame) -> pd.DataFrame:
     numeric_cols = [
         "fitness",
         "min_hamming",
@@ -226,11 +260,13 @@ def make_group_summary(all_runs_df):
         "valid_gc_fraction",
         "valid_hp_fraction",
         "runtime_seconds",
-        "seed_pool_runtime_seconds",
+        "candidate_pool_runtime_seconds",
         "total_runtime_seconds",
     ]
 
-    available_numeric_cols = [c for c in numeric_cols if c in all_runs_df.columns]
+    available_numeric_cols = [
+        col for col in numeric_cols if col in all_runs_df.columns
+    ]
 
     summary = (
         all_runs_df
@@ -239,7 +275,6 @@ def make_group_summary(all_runs_df):
         .reset_index()
     )
 
-    # Flatten multi-index columns
     summary.columns = [
         "_".join([str(x) for x in col if str(x) != ""])
         for col in summary.columns.values
@@ -248,38 +283,54 @@ def make_group_summary(all_runs_df):
     return summary
 
 
-def make_delta_summary(all_runs_df):
+def make_delta_summary(all_runs_df: pd.DataFrame):
     proposed = all_runs_df[all_runs_df["method"] == "Proposed"].copy()
-    abc = all_runs_df[all_runs_df["method"] == "ABC-only"].copy()
-
-    merge_cols = ["length", "size", "seed"]
+    abc_only = all_runs_df[all_runs_df["method"] == "ABC-only"].copy()
 
     merged = proposed.merge(
-        abc,
-        on=merge_cols,
+        abc_only,
+        on=["length", "size", "seed"],
         suffixes=("_proposed", "_abc_only"),
         how="inner",
     )
 
-    for metric in ["fitness", "min_hamming", "avg_hamming", "collision_pairs_radius1"]:
-        p = f"{metric}_proposed"
-        a = f"{metric}_abc_only"
-        if p in merged.columns and a in merged.columns:
-            merged[f"delta_{metric}"] = merged[p] - merged[a]
+    metrics = [
+        "fitness",
+        "min_hamming",
+        "avg_hamming",
+        "collision_pairs_radius1",
+    ]
+
+    for metric in metrics:
+        proposed_col = f"{metric}_proposed"
+        abc_col = f"{metric}_abc_only"
+
+        if proposed_col in merged.columns and abc_col in merged.columns:
+            merged[f"delta_{metric}"] = (
+                merged[proposed_col] - merged[abc_col]
+            )
+
+    if "delta_fitness" in merged.columns:
+        merged["proposed_better_fitness"] = (
+            merged["delta_fitness"] > 0
+        ).astype(int)
 
     delta_cols = [
         "delta_fitness",
         "delta_min_hamming",
         "delta_avg_hamming",
         "delta_collision_pairs_radius1",
+        "proposed_better_fitness",
     ]
 
-    available_delta_cols = [c for c in delta_cols if c in merged.columns]
+    available_delta_cols = [
+        col for col in delta_cols if col in merged.columns
+    ]
 
     delta_summary = (
         merged
         .groupby(["length", "size"])[available_delta_cols]
-        .agg(["mean", "std", "min", "max"])
+        .agg(["mean", "std", "min", "max", "sum"])
         .reset_index()
     )
 
@@ -301,9 +352,9 @@ def main():
 
     all_rows = []
 
-    for exp in EXPERIMENTS:
-        length = exp["length"]
-        size = exp["size"]
+    for experiment in EXPERIMENTS:
+        length = experiment["length"]
+        size = experiment["size"]
 
         for seed in SEEDS:
             out_dir = run_one_experiment(length, size, seed)
