@@ -1,0 +1,3 @@
+method,fitness,min_hamming,avg_hamming,gc_penalty,homopolymer_penalty,collision_pairs_radius1,duplicate_count,kmer_entropy,valid_gc_fraction,valid_hp_fraction,runtime_seconds,candidate_pool_runtime_seconds,total_runtime_seconds
+ABC-only control,3.2555302526108254,6,9.120039682539682,0.0,0.0,0,0,0.9910538914650365,1.0,1.0,13.083441495895386,0.0,13.083441495895386
+Reference-free Transformer-generated pool + ABC,3.2574703154090803,6,9.126488095238095,0.0,0.0,0,0,0.9938592816118114,1.0,1.0,34.759156227111816,47.22964906692505,81.98880529403687

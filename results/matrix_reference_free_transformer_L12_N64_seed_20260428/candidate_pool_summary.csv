@@ -1,0 +1,2 @@
+raw_pool_size_requested,raw_generated_unique,selected_pool_size_requested,selected_pool_size,transformer_candidates,random_fill_candidates,valid_gc_fraction_raw,valid_hp_fraction_raw,raw_kmer_entropy,valid_gc_fraction_selected,valid_hp_fraction_selected,selected_kmer_entropy,transformer_stream_bases,runtime_generation_seconds,runtime_filter_seconds,runtime_total_seconds
+512,512,256,256,307,205,1.0,1.0,0.9786798096906493,1.0,1.0,0.9896541103317161,14736,38.89566159248352,8.329383850097656,47.22964906692505
