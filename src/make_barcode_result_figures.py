@@ -266,7 +266,7 @@ def figure_constraints_combined(result_dir):
 
 def main():
     print("=" * 80)
-    print("Generating improved barcode result figures")
+    print("Generating barcode result figures")
     print("=" * 80)
     print(f"Result folder: {RESULT_DIR.resolve()}")
     print(f"Output folder: {OUTPUT_DIR.resolve()}")
