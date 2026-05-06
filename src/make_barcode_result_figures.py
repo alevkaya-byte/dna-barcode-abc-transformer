@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
 """
 make_barcode_result_figures.py
 
-Improved article-ready figure generator for DNA barcode library results.
+Article-ready figure generator for DNA barcode/index library optimization results.
 
 Required files inside RESULT_DIR:
 - run_log.csv
@@ -11,11 +10,8 @@ Required files inside RESULT_DIR:
 - best_library.csv
 - pairwise_distances.csv
 
-Recommended Spyder run:
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/make_barcode_result_figures_v2.py',
-    wdir='C:/Users/kaya-/Desktop/ABC'
-)
+Example command:
+python src/make_barcode_result_figures.py
 """
 
 from pathlib import Path
@@ -29,11 +25,11 @@ import matplotlib.pyplot as plt
 # CHANGE THIS FOLDER NAME IF NEEDED
 # ============================================================
 
-RESULT_DIR = Path("matrix_reference_free_transformer_L12_N64_seed_20260428")
-# Alternative example:
-# RESULT_DIR = Path("multiseed_reference_free_transformer_seed_20260428")
+BASE_DIR = Path(__file__).resolve().parents[1]
 
-OUTPUT_DIR = Path("article_figures")
+RESULT_DIR = BASE_DIR / "results" / "matrix_reference_free_transformer_L12_N64_seed_20260428"
+OUTPUT_DIR = BASE_DIR / "figures"
+
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
