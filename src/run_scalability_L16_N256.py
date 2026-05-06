@@ -1,36 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue May  5 11:15:06 2026
-
-@author: kaya-
-"""
-
-# -*- coding: utf-8 -*-
-"""
 run_scalability_L16_N256.py
 
-Scalability stress test for the DNA barcode/index library manuscript.
+Scalability stress test for the DNA barcode/index library study.
 
-Runs:
+Experiment setting:
 - L = 16
 - N = 256
 - 3 independent seeds
-- Proposed reference-free Transformer + ABC
+- Proposed reference-free Transformer candidate generation + ABC
 - ABC-only control
 
 Purpose:
-This is NOT a million-scale barcode generation test.
-It is a moderate-scale optimization stress test to show whether the
-proposed library-level ABC optimization remains usable beyond N=128.
+This is not a million-scale barcode generation test. It is a moderate-scale
+optimization stress test to evaluate whether the proposed library-level
+optimization remains usable beyond N=128.
 
-Required file in the same folder:
-barcode_abc_reference_free_transformer.py
+Required script:
+- src/barcode_abc_reference_free_transformer.py
 
-Spyder run:
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/run_scalability_L16_N256.py',
-    wdir='C:/Users/kaya-/Desktop/ABC'
-)
+Example command:
+python src/run_scalability_L16_N256.py
 """
 
 import json
@@ -46,10 +36,16 @@ import pandas as pd
 # Paths
 # ============================================================
 
-BASE_DIR = Path(r"C:/Users/kaya-/Desktop/ABC")
-MAIN_SCRIPT = BASE_DIR / "barcode_abc_reference_free_transformer.py"
+BASE_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = BASE_DIR / "src"
+RESULTS_DIR = BASE_DIR / "results"
+RAW_DIR = RESULTS_DIR / "raw_runs" / "scalability_L16_N256"
 
-SUMMARY_DIR = BASE_DIR / "scalability_L16_N256_summaries"
+MAIN_SCRIPT = SRC_DIR / "barcode_abc_reference_free_transformer.py"
+
+SUMMARY_DIR = RESULTS_DIR / "scalability_L16_N256_summaries"
+
+RAW_DIR.mkdir(parents=True, exist_ok=True)
 SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -81,9 +77,9 @@ SKIP_EXISTING = True
 # Helpers
 # ============================================================
 
-def run_one(seed):
+def run_one(seed: int) -> Path:
     out_name = f"scalability_reference_free_transformer_L{LENGTH}_N{SIZE}_seed_{seed}"
-    out_dir = BASE_DIR / out_name
+    out_dir = RAW_DIR / out_name
 
     expected_files = [
         out_dir / "best_summary.json",
@@ -93,7 +89,7 @@ def run_one(seed):
         out_dir / "pairwise_distances.csv",
     ]
 
-    if SKIP_EXISTING and all(p.exists() for p in expected_files):
+    if SKIP_EXISTING and all(path.exists() for path in expected_files):
         print(f"[SKIP] Existing complete result found: {out_name}")
         return out_dir
 
@@ -109,12 +105,12 @@ def run_one(seed):
         "--filter-sample-size", str(COMMON_ARGS["filter_sample_size"]),
         "--run-abc-control",
         "--seed", str(seed),
-        "--out", out_name,
+        "--out", str(out_dir),
     ]
 
     print("=" * 90)
     print(f"Running scalability stress test: L={LENGTH}, N={SIZE}, seed={seed}")
-    print(f"Output folder: {out_name}")
+    print(f"Output folder: {out_dir}")
     print("=" * 90)
 
     subprocess.run(cmd, cwd=str(BASE_DIR), check=True)
@@ -122,18 +118,27 @@ def run_one(seed):
     return out_dir
 
 
-def read_json(path):
+def read_json(path: Path) -> dict:
     if not path.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
-def read_proposed(folder):
-    js = read_json(folder / "best_summary.json")
+def read_proposed(folder: Path) -> dict:
+    data = read_json(folder / "best_summary.json")
 
-    best = js.get("best_metrics", {})
-    pool = js.get("candidate_pool_summary", {})
+    best = data.get("best_metrics", {}) or {}
+    pool = data.get("candidate_pool_summary", {}) or {}
+
+    runtime_seconds = data.get("runtime_seconds", np.nan)
+    pool_runtime = pool.get("runtime_total_seconds", np.nan)
+
+    if pd.isna(runtime_seconds) or pd.isna(pool_runtime):
+        total_runtime = np.nan
+    else:
+        total_runtime = runtime_seconds + pool_runtime
 
     return {
         "method": "Proposed",
@@ -147,20 +152,16 @@ def read_proposed(folder):
         "kmer_entropy": best.get("kmer_entropy", np.nan),
         "valid_gc_fraction": best.get("valid_gc_fraction", np.nan),
         "valid_hp_fraction": best.get("valid_hp_fraction", np.nan),
-        "abc_runtime_seconds": js.get("runtime_seconds", np.nan),
-        "candidate_pool_runtime_seconds": pool.get("runtime_total_seconds", np.nan),
-        "total_runtime_seconds": (
-            js.get("runtime_seconds", 0.0)
-            + pool.get("runtime_total_seconds", 0.0)
-        ),
+        "abc_runtime_seconds": runtime_seconds,
+        "candidate_pool_runtime_seconds": pool_runtime,
+        "total_runtime_seconds": total_runtime,
     }
 
 
-def read_abc_only(folder):
+def read_abc_only(folder: Path) -> dict:
     comparison_path = folder / "comparison_summary.csv"
     log_path = folder / "run_log_abc_only_control.csv"
 
-    # Prefer comparison_summary.csv if possible.
     if comparison_path.exists():
         df = pd.read_csv(comparison_path)
 
@@ -169,74 +170,47 @@ def read_abc_only(folder):
             abc_rows = df[mask]
 
             if len(abc_rows) > 0:
-                r = abc_rows.iloc[0].to_dict()
+                row = abc_rows.iloc[0].to_dict()
+
                 return {
                     "method": "ABC-only",
-                    "fitness": r.get("fitness", np.nan),
-                    "min_hamming": r.get("min_hamming", np.nan),
-                    "avg_hamming": r.get("avg_hamming", np.nan),
-                    "gc_penalty": r.get("gc_penalty", np.nan),
-                    "homopolymer_penalty": r.get("homopolymer_penalty", np.nan),
-                    "collision_pairs_radius1": r.get("collision_pairs_radius1", np.nan),
-                    "duplicate_count": r.get("duplicate_count", np.nan),
-                    "kmer_entropy": r.get("kmer_entropy", np.nan),
-                    "valid_gc_fraction": r.get("valid_gc_fraction", np.nan),
-                    "valid_hp_fraction": r.get("valid_hp_fraction", np.nan),
-                    "abc_runtime_seconds": r.get("runtime_seconds", np.nan),
+                    "fitness": row.get("fitness", np.nan),
+                    "min_hamming": row.get("min_hamming", np.nan),
+                    "avg_hamming": row.get("avg_hamming", np.nan),
+                    "gc_penalty": row.get("gc_penalty", np.nan),
+                    "homopolymer_penalty": row.get("homopolymer_penalty", np.nan),
+                    "collision_pairs_radius1": row.get(
+                        "collision_pairs_radius1", np.nan
+                    ),
+                    "duplicate_count": row.get("duplicate_count", np.nan),
+                    "kmer_entropy": row.get("kmer_entropy", np.nan),
+                    "valid_gc_fraction": row.get("valid_gc_fraction", np.nan),
+                    "valid_hp_fraction": row.get("valid_hp_fraction", np.nan),
+                    "abc_runtime_seconds": row.get("runtime_seconds", np.nan),
                     "candidate_pool_runtime_seconds": np.nan,
-                    "total_runtime_seconds": r.get("runtime_seconds", np.nan),
+                    "total_runtime_seconds": row.get("runtime_seconds", np.nan),
                 }
 
-    # Fallback to ABC-only run log.
     if not log_path.exists():
-        return {
-            "method": "ABC-only",
-            "fitness": np.nan,
-            "min_hamming": np.nan,
-            "avg_hamming": np.nan,
-            "gc_penalty": np.nan,
-            "homopolymer_penalty": np.nan,
-            "collision_pairs_radius1": np.nan,
-            "duplicate_count": np.nan,
-            "kmer_entropy": np.nan,
-            "valid_gc_fraction": np.nan,
-            "valid_hp_fraction": np.nan,
-            "abc_runtime_seconds": np.nan,
-            "candidate_pool_runtime_seconds": np.nan,
-            "total_runtime_seconds": np.nan,
-        }
+        raise FileNotFoundError(f"Missing ABC-only log: {log_path}")
 
     df = pd.read_csv(log_path)
-    if df.empty:
-        return {
-            "method": "ABC-only",
-            "fitness": np.nan,
-            "min_hamming": np.nan,
-            "avg_hamming": np.nan,
-            "gc_penalty": np.nan,
-            "homopolymer_penalty": np.nan,
-            "collision_pairs_radius1": np.nan,
-            "duplicate_count": np.nan,
-            "kmer_entropy": np.nan,
-            "valid_gc_fraction": np.nan,
-            "valid_hp_fraction": np.nan,
-            "abc_runtime_seconds": np.nan,
-            "candidate_pool_runtime_seconds": np.nan,
-            "total_runtime_seconds": np.nan,
-        }
 
-    r = df.iloc[-1].to_dict()
+    if df.empty:
+        raise ValueError(f"Empty ABC-only log: {log_path}")
+
+    row = df.iloc[-1].to_dict()
 
     return {
         "method": "ABC-only",
-        "fitness": r.get("best_fitness", r.get("fitness", np.nan)),
-        "min_hamming": r.get("min_hamming", r.get("minD", np.nan)),
-        "avg_hamming": r.get("avg_hamming", r.get("avgD", np.nan)),
+        "fitness": row.get("best_fitness", row.get("fitness", np.nan)),
+        "min_hamming": row.get("min_hamming", row.get("minD", np.nan)),
+        "avg_hamming": row.get("avg_hamming", row.get("avgD", np.nan)),
         "gc_penalty": np.nan,
         "homopolymer_penalty": np.nan,
-        "collision_pairs_radius1": r.get(
+        "collision_pairs_radius1": row.get(
             "collision_pairs_radius1",
-            r.get("coll", r.get("collision", np.nan)),
+            row.get("coll", row.get("collision", np.nan)),
         ),
         "duplicate_count": np.nan,
         "kmer_entropy": np.nan,
@@ -272,9 +246,13 @@ def build_summaries(rows):
         "total_runtime_seconds",
     ]
 
+    available_numeric_cols = [
+        col for col in numeric_cols if col in df.columns
+    ]
+
     group_summary = (
         df
-        .groupby(["length", "size", "method"])[numeric_cols]
+        .groupby(["length", "size", "method"])[available_numeric_cols]
         .agg(["mean", "std", "min", "max"])
         .reset_index()
     )
@@ -287,30 +265,39 @@ def build_summaries(rows):
     group_summary.to_csv(group_summary_path, index=False, encoding="utf-8-sig")
 
     proposed = df[df["method"] == "Proposed"].copy()
-    abc = df[df["method"] == "ABC-only"].copy()
+    abc_only = df[df["method"] == "ABC-only"].copy()
 
     merged = proposed.merge(
-        abc,
+        abc_only,
         on=["length", "size", "seed"],
         suffixes=("_proposed", "_abc_only"),
         how="inner",
     )
 
-    for metric in ["fitness", "min_hamming", "avg_hamming", "collision_pairs_radius1"]:
-        p = f"{metric}_proposed"
-        a = f"{metric}_abc_only"
+    for metric in [
+        "fitness",
+        "min_hamming",
+        "avg_hamming",
+        "collision_pairs_radius1",
+    ]:
+        proposed_col = f"{metric}_proposed"
+        abc_col = f"{metric}_abc_only"
 
-        if p in merged.columns and a in merged.columns:
-            merged[f"delta_{metric}"] = merged[p] - merged[a]
+        if proposed_col in merged.columns and abc_col in merged.columns:
+            merged[f"delta_{metric}"] = (
+                merged[proposed_col] - merged[abc_col]
+            )
 
     if "delta_fitness" in merged.columns:
-        merged["proposed_better_fitness"] = (merged["delta_fitness"] > 0).astype(int)
+        merged["proposed_better_fitness"] = (
+            merged["delta_fitness"] > 0
+        ).astype(int)
 
     merged.to_csv(delta_raw_path, index=False, encoding="utf-8-sig")
 
     delta_cols = [
-        c for c in merged.columns
-        if c.startswith("delta_") or c == "proposed_better_fitness"
+        col for col in merged.columns
+        if col.startswith("delta_") or col == "proposed_better_fitness"
     ]
 
     if delta_cols:
@@ -325,11 +312,10 @@ def build_summaries(rows):
             "_".join([str(x) for x in col if str(x) != ""])
             for col in delta_summary.columns
         ]
-
-        delta_summary.to_csv(delta_summary_path, index=False, encoding="utf-8-sig")
     else:
         delta_summary = pd.DataFrame()
-        delta_summary.to_csv(delta_summary_path, index=False, encoding="utf-8-sig")
+
+    delta_summary.to_csv(delta_summary_path, index=False, encoding="utf-8-sig")
 
     print("\n" + "=" * 90)
     print("SCALABILITY L16_N256 SUMMARY FILES CREATED")
@@ -359,12 +345,14 @@ def main():
         abc_row = read_abc_only(folder)
 
         for row in [proposed_row, abc_row]:
-            row.update({
-                "length": LENGTH,
-                "size": SIZE,
-                "seed": seed,
-                "output_folder": folder.name,
-            })
+            row.update(
+                {
+                    "length": LENGTH,
+                    "size": SIZE,
+                    "seed": seed,
+                    "output_folder": str(folder.relative_to(BASE_DIR)),
+                }
+            )
             rows.append(row)
 
     build_summaries(rows)
