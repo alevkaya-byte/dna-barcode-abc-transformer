@@ -1,44 +1,49 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon May  4 10:28:08 2026
-
-@author: kaya-
-"""
-
-# -*- coding: utf-8 -*-
-"""
 run_random_greedy_baselines.py
 
 Random constrained and Greedy constrained baseline experiments
-for DNA barcode library design.
+for DNA barcode/index library design.
 
-This script imports utility functions from:
-    barcode_abc_reference_free_transformer.py
-
-It does NOT run Transformer and does NOT run ABC.
-It only evaluates two simple baselines:
+This script does not run Transformer-based candidate generation and does not run ABC.
+It evaluates two simple baseline methods:
 
 1. Random constrained:
-   - Randomly generates valid DNA barcodes satisfying GC and homopolymer constraints.
+   Randomly generates valid DNA barcodes satisfying GC and homopolymer constraints.
 
 2. Greedy constrained:
-   - Builds a larger random valid candidate pool.
-   - Selects barcodes greedily to maximize separation and diversity.
+   Builds a larger random valid candidate pool and selects barcodes greedily
+   to increase separation and diversity.
 
-Recommended Spyder run
-----------------------
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/run_random_greedy_baselines.py',
-    wdir='C:/Users/kaya-/Desktop/ABC'
-)
+Required script:
+- src/barcode_abc_reference_free_transformer.py
+
+Example command:
+python src/run_random_greedy_baselines.py
 """
 
 import csv
+import sys
 import time
 from pathlib import Path
 from statistics import mean, stdev
 
 import numpy as np
+
+
+# ============================================================
+# Paths
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = BASE_DIR / "src"
+RESULTS_DIR = BASE_DIR / "results"
+
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 
 from barcode_abc_reference_free_transformer import (
     BarcodeConfig,
@@ -54,14 +59,16 @@ from barcode_abc_reference_free_transformer import (
 )
 
 
+# ============================================================
+# Experiment settings
+# ============================================================
+
 SEEDS = [
     20260428,
     20260429,
     20260430,
 ]
 
-# We only run baselines for the most important representative settings.
-# These are enough for the first ablation table.
 EXPERIMENTS = [
     {
         "tag": "L12_N64",
@@ -84,18 +91,24 @@ GREEDY_POOL_MULTIPLIER = 20
 GREEDY_POOL_MIN = 1024
 
 
+# ============================================================
+# Helper functions
+# ============================================================
+
 def safe_stdev(values):
     if len(values) <= 1:
         return 0.0
     return stdev(values)
 
 
-def write_csv(path, rows):
+def write_csv(path: Path, rows):
     if not rows:
         return
 
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
@@ -117,7 +130,7 @@ def generate_random_library(cfg, seed):
     generate N unique barcodes satisfying GC and homopolymer constraints.
     """
 
-    gen = ReferenceFreeCandidateGenerator(
+    generator = ReferenceFreeCandidateGenerator(
         cfg=cfg,
         seed=seed,
         use_transformer=False,
@@ -131,7 +144,7 @@ def generate_random_library(cfg, seed):
 
     while len(library) < cfg.size and attempts < max_attempts:
         attempts += 1
-        seq = gen.random_sequence()
+        seq = generator.random_sequence()
 
         if seq not in seen:
             seen.add(seq)
@@ -151,7 +164,7 @@ def generate_random_candidate_pool(cfg, seed, pool_size):
     Generate a random valid candidate pool for the greedy baseline.
     """
 
-    gen = ReferenceFreeCandidateGenerator(
+    generator = ReferenceFreeCandidateGenerator(
         cfg=cfg,
         seed=seed,
         use_transformer=False,
@@ -165,7 +178,7 @@ def generate_random_candidate_pool(cfg, seed, pool_size):
 
     while len(pool) < pool_size and attempts < max_attempts:
         attempts += 1
-        seq = gen.random_sequence()
+        seq = generator.random_sequence()
 
         if seq not in seen:
             seen.add(seq)
@@ -191,24 +204,22 @@ def greedy_select_library(candidate_pool, cfg, seed):
     pool = list(dict.fromkeys(candidate_pool))
     rng.shuffle(pool)
 
-    # Start from a sequence close to target GC and valid homopolymer structure.
     first = max(
         pool[: min(1000, len(pool))],
-        key=lambda s: (
-            -abs(gc_fraction(s) - cfg.gc_target)
-            - homopolymer_penalty(s, cfg)
+        key=lambda seq: (
+            -abs(gc_fraction(seq) - cfg.gc_target)
+            - homopolymer_penalty(seq, cfg)
         ),
     )
 
     library = [first]
     selected_kmers = set(kmer_counts(first, cfg.kmer_k).keys())
-    remaining = [s for s in pool if s != first]
+    remaining = [seq for seq in pool if seq != first]
 
     while len(library) < cfg.size and remaining:
         best = None
         best_score = -1e9
 
-        # To keep runtime controlled, evaluate at most 600 candidates per step.
         sample_size = min(len(remaining), 600)
         sample_indices = rng.choice(
             len(remaining),
@@ -219,8 +230,8 @@ def greedy_select_library(candidate_pool, cfg, seed):
         for idx in sample_indices:
             seq = remaining[int(idx)]
 
-            nearest = min(hamming(seq, x) for x in library)
-            avgd = float(np.mean([hamming(seq, x) for x in library]))
+            nearest = min(hamming(seq, other) for other in library)
+            avgd = float(np.mean([hamming(seq, other) for other in library]))
             novelty = kmer_novelty(seq, selected_kmers, cfg.kmer_k)
 
             score = (
@@ -264,18 +275,18 @@ def run_one_experiment(exp, seed):
 
     rows = []
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
     # Random constrained baseline
-    # -------------------------------------------------------------------------
-    t0 = time.time()
+    # ---------------------------------------------------------------------
+    start_time = time.time()
 
-    random_lib = generate_random_library(
+    random_library = generate_random_library(
         cfg=cfg,
         seed=seed + 1000,
     )
 
-    random_runtime = time.time() - t0
-    random_metrics = evaluate_library(random_lib, cfg)
+    random_runtime = time.time() - start_time
+    random_metrics = evaluate_library(random_library, cfg)
 
     rows.append(
         {
@@ -290,12 +301,12 @@ def run_one_experiment(exp, seed):
         }
     )
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
     # Greedy constrained baseline
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
     greedy_pool_size = max(GREEDY_POOL_MIN, GREEDY_POOL_MULTIPLIER * cfg.size)
 
-    t0 = time.time()
+    start_time = time.time()
 
     pool = generate_random_candidate_pool(
         cfg=cfg,
@@ -303,14 +314,14 @@ def run_one_experiment(exp, seed):
         pool_size=greedy_pool_size,
     )
 
-    greedy_lib = greedy_select_library(
+    greedy_library = greedy_select_library(
         candidate_pool=pool,
         cfg=cfg,
         seed=seed + 3000,
     )
 
-    greedy_runtime = time.time() - t0
-    greedy_metrics = evaluate_library(greedy_lib, cfg)
+    greedy_runtime = time.time() - start_time
+    greedy_metrics = evaluate_library(greedy_library, cfg)
 
     rows.append(
         {
@@ -343,22 +354,22 @@ def summarize_group(rows):
 
     groups = {}
 
-    for r in rows:
+    for row in rows:
         key = (
-            r["experiment"],
-            r["length"],
-            r["size"],
-            r["method"],
+            row["experiment"],
+            row["length"],
+            row["size"],
+            row["method"],
         )
 
-        groups.setdefault(key, []).append(r)
+        groups.setdefault(key, []).append(row)
 
     summary_rows = []
 
     for key, group_rows in groups.items():
         experiment, length, size, method = key
 
-        out = {
+        output_row = {
             "experiment": experiment,
             "length": length,
             "size": size,
@@ -367,23 +378,25 @@ def summarize_group(rows):
         }
 
         for field in fields:
-            values = [float(r[field]) for r in group_rows]
+            values = [float(row[field]) for row in group_rows]
 
-            out[f"{field}_mean"] = mean(values)
-            out[f"{field}_std"] = safe_stdev(values)
-            out[f"{field}_min"] = min(values)
-            out[f"{field}_max"] = max(values)
+            output_row[f"{field}_mean"] = mean(values)
+            output_row[f"{field}_std"] = safe_stdev(values)
+            output_row[f"{field}_min"] = min(values)
+            output_row[f"{field}_max"] = max(values)
 
-        summary_rows.append(out)
+        summary_rows.append(output_row)
 
-    summary_rows.sort(key=lambda x: (x["length"], x["size"], x["method"]))
+    summary_rows.sort(key=lambda item: (item["length"], item["size"], item["method"]))
 
     return summary_rows
 
 
-def main():
-    root = Path.cwd()
+# ============================================================
+# Main
+# ============================================================
 
+def main():
     all_rows = []
 
     print("=" * 80)
@@ -391,10 +404,12 @@ def main():
     print("=" * 80)
     print(f"Seeds: {SEEDS}")
     print("Experiments:")
+
     for exp in EXPERIMENTS:
         print(
             f"  {exp['tag']}: length={exp['length']}, size={exp['size']}"
         )
+
     print("=" * 80)
 
     for exp in EXPERIMENTS:
@@ -409,22 +424,22 @@ def main():
             rows = run_one_experiment(exp, seed)
             all_rows.extend(rows)
 
-            for r in rows:
+            for row in rows:
                 print(
-                    f"{r['method']:22s} "
-                    f"fitness={r['fitness']:.6f} "
-                    f"minD={r['min_hamming']} "
-                    f"avgD={r['avg_hamming']:.4f} "
-                    f"coll={r['collision_pairs_radius1']} "
-                    f"dup={r['duplicate_count']} "
-                    f"time={r['runtime_seconds']:.2f}s"
+                    f"{row['method']:22s} "
+                    f"fitness={row['fitness']:.6f} "
+                    f"minD={row['min_hamming']} "
+                    f"avgD={row['avg_hamming']:.4f} "
+                    f"coll={row['collision_pairs_radius1']} "
+                    f"dup={row['duplicate_count']} "
+                    f"time={row['runtime_seconds']:.2f}s"
                 )
 
-            partial_path = root / "random_greedy_baselines_all_runs_partial.csv"
+            partial_path = RESULTS_DIR / "random_greedy_baselines_all_runs_partial.csv"
             write_csv(partial_path, all_rows)
 
-    all_runs_path = root / "random_greedy_baselines_all_runs.csv"
-    summary_path = root / "random_greedy_baselines_group_summary.csv"
+    all_runs_path = RESULTS_DIR / "random_greedy_baselines_all_runs.csv"
+    summary_path = RESULTS_DIR / "random_greedy_baselines_group_summary.csv"
 
     write_csv(all_runs_path, all_rows)
 
@@ -440,15 +455,15 @@ def main():
     print("\nSummary")
     print("-" * 80)
 
-    for r in summary_rows:
+    for row in summary_rows:
         print(
-            f"{r['experiment']:10s} "
-            f"{r['method']:22s} "
-            f"fitness={r['fitness_mean']:.6f}±{r['fitness_std']:.6f} "
-            f"minD={r['min_hamming_mean']:.2f} "
-            f"avgD={r['avg_hamming_mean']:.4f} "
-            f"coll={r['collision_pairs_radius1_mean']:.2f} "
-            f"dup={r['duplicate_count_mean']:.2f}"
+            f"{row['experiment']:10s} "
+            f"{row['method']:22s} "
+            f"fitness={row['fitness_mean']:.6f}±{row['fitness_std']:.6f} "
+            f"minD={row['min_hamming_mean']:.2f} "
+            f"avgD={row['avg_hamming_mean']:.4f} "
+            f"coll={row['collision_pairs_radius1_mean']:.2f} "
+            f"dup={row['duplicate_count_mean']:.2f}"
         )
 
 
