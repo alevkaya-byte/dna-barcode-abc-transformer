@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Apr 28 14:02:10 2026
+barcode_abc_reference_free_transformer.py
 
-@author: kaya-
+Reference-free Transformer-generated candidate pools for ABC-based
+DNA barcode library optimization.
+...
 """
 
 # -*- coding: utf-8 -*-
