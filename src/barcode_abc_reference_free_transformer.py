@@ -4,15 +4,14 @@ barcode_abc_reference_free_transformer.py
 
 Reference-free Transformer-generated candidate pools for ABC-based
 DNA barcode library optimization.
+
+Important terminology
+---------------------
+This file intentionally avoids PRNG/keystream/randomness-test terminology.
+The Transformer is used only as a reference-free DNA candidate generator.
+The final barcode library is selected and optimized by ABC at the library level.
 ...
 """
-
-# -*- coding: utf-8 -*-
-"""
-barcode_abc_reference_free_transformer.py
-
-Reference-free Transformer-generated candidate pools for ABC-based
-DNA barcode library optimization.
 
 Important terminology
 ---------------------
