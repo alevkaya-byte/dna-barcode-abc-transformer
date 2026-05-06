@@ -1,0 +1,43 @@
+{
+  "alphabet": ["A", "C", "G", "T"],
+  "barcode_lengths": [12, 16],
+  "library_sizes": [64, 96, 128, 256],
+  "gc_range": [0.40, 0.60],
+  "max_homopolymer": 3,
+  "error_radius": 1,
+  "kmer_length": 3,
+  "abc_food_sources": 12,
+  "abc_iterations": 20,
+  "trial_limit": 20,
+  "mutation_rate": 0.30,
+  "local_trials": 3,
+  "candidate_trials": 8,
+  "critical_10seed_settings": [
+    {"L": 12, "N": 64},
+    {"L": 12, "N": 128}
+  ],
+  "problem_size_matrix_settings": [
+    {"L": 12, "N": 64},
+    {"L": 12, "N": 96},
+    {"L": 12, "N": 128},
+    {"L": 16, "N": 64},
+    {"L": 16, "N": 96}
+  ],
+  "baseline_settings": [
+    {"L": 12, "N": 64},
+    {"L": 12, "N": 128},
+    {"L": 16, "N": 64}
+  ],
+  "scalability_setting": {
+    "L": 16,
+    "N": 256,
+    "seeds": [20260501, 20260502, 20260503]
+  },
+  "runtime_environment": {
+    "python": "3.12.3",
+    "operating_system": "Windows 11 Pro 64-bit",
+    "cpu": "Intel Core i7-10750H",
+    "ram": "16 GB",
+    "execution_mode": "CPU only"
+  }
+}
