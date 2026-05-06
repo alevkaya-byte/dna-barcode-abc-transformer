@@ -1,49 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Apr 28 14:40:28 2026
-
-@author: kaya-
-"""
-
-# -*- coding: utf-8 -*-
-"""
 run_matrix_reference_free_transformer.py
 
-Problem-size matrix runner for:
+Problem-size matrix runner for the DNA barcode/index library optimization study.
 
-Reference-free Transformer-generated candidate pool + ABC
-for DNA barcode library optimization.
+This script runs several barcode-design problem sizes using:
 
-This script assumes that barcode_abc_reference_free_transformer.py
-is in the same folder.
+- Proposed reference-free Transformer candidate generation + ABC
+- ABC-only control
 
-Purpose
--------
-This is a Q1-oriented generalization experiment.
+Problem-size matrix:
+- L=12, N=64
+- L=12, N=96
+- L=12, N=128
+- L=16, N=64
+- L=16, N=96
 
-It runs several barcode-design problem sizes:
+Each setting is evaluated with 3 independent seeds.
 
-    (length=12, size=64)
-    (length=12, size=96)
-    (length=12, size=128)
-    (length=16, size=64)
-    (length=16, size=96)
+Required script:
+- src/barcode_abc_reference_free_transformer.py
 
-Each setting is tested with 3 independent seeds.
-
-Outputs
--------
-- matrix_reference_free_transformer_all_runs.csv
-- matrix_reference_free_transformer_group_summary.csv
-- matrix_reference_free_transformer_delta_summary.csv
-- one output folder for each length-size-seed setting
-
-Recommended Spyder run
-----------------------
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/run_matrix_reference_free_transformer.py',
-    wdir='C:/Users/kaya-/Desktop/ABC'
-)
+Example command:
+python src/run_matrix_reference_free_transformer.py
 """
 
 import csv
@@ -55,18 +34,31 @@ from pathlib import Path
 from statistics import mean, stdev
 
 
-SCRIPT_NAME = "barcode_abc_reference_free_transformer.py"
+# ============================================================
+# Paths
+# ============================================================
 
-# First screening: 3 seeds.
-# If this looks good, later we repeat selected settings with 5 or 10 seeds.
+BASE_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = BASE_DIR / "src"
+RESULTS_DIR = BASE_DIR / "results"
+RAW_DIR = RESULTS_DIR / "raw_runs" / "problem_size_matrix"
+
+MAIN_SCRIPT = SRC_DIR / "barcode_abc_reference_free_transformer.py"
+
+RAW_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================
+# Experiment settings
+# ============================================================
+
 SEEDS = [
     20260428,
     20260429,
     20260430,
 ]
 
-# Problem-size matrix.
-# raw_pool and seed_pool are scaled with the target library size.
 EXPERIMENTS = [
     {
         "tag": "L12_N64",
@@ -110,10 +102,6 @@ EXPERIMENTS = [
     },
 ]
 
-BASE_OUT = "matrix_reference_free_transformer"
-
-# ABC settings.
-# Keep these stable for fair comparison.
 COMMON_ARGS = [
     "--iters", "20",
     "--foods", "12",
@@ -124,19 +112,24 @@ COMMON_ARGS = [
     "--run-abc-control",
 ]
 
+BASE_OUT = "matrix_reference_free_transformer"
+
 # If False, completed folders are reused.
-# This is useful if the script is interrupted; just run it again.
 FORCE_RERUN = False
 
 
-def read_csv_rows(path):
-    with open(path, "r", encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
+# ============================================================
+# Helper functions
+# ============================================================
+
+def read_csv_rows(path: Path):
+    with open(path, "r", encoding="utf-8", newline="") as file:
+        return list(csv.DictReader(file))
 
 
-def read_json(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def read_json(path: Path):
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
 def to_float(value):
@@ -152,18 +145,19 @@ def safe_stdev(values):
     return stdev(values)
 
 
-def write_csv(path, rows):
+def write_csv(path: Path, rows):
     if not rows:
         return
 
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
 
-def collect_run_rows(root, out_dir, exp, seed):
-    out_path = root / out_dir
+def collect_run_rows(out_path: Path, exp: dict, seed: int):
     comparison_path = out_path / "comparison_summary.csv"
     best_summary_path = out_path / "best_summary.json"
 
@@ -229,7 +223,7 @@ def collect_run_rows(root, out_dir, exp, seed):
                 "selected_valid_hp_fraction": pool_summary.get(
                     "valid_hp_fraction_selected", ""
                 ),
-                "out_dir": out_dir,
+                "out_dir": str(out_path.relative_to(BASE_DIR)),
             }
         )
 
@@ -253,15 +247,14 @@ def summarize_by_group(rows):
 
     groups = {}
 
-    for r in rows:
+    for row in rows:
         key = (
-            r["experiment"],
-            int(r["length"]),
-            int(r["size"]),
-            r["method"],
+            row["experiment"],
+            int(row["length"]),
+            int(row["size"]),
+            row["method"],
         )
-
-        groups.setdefault(key, []).append(r)
+        groups.setdefault(key, []).append(row)
 
     summary_rows = []
 
@@ -277,8 +270,8 @@ def summarize_by_group(rows):
         }
 
         for field in fields:
-            values = [to_float(r.get(field, "")) for r in group_rows]
-            values = [v for v in values if v is not None]
+            values = [to_float(row.get(field, "")) for row in group_rows]
+            values = [value for value in values if value is not None]
 
             if not values:
                 out[f"{field}_mean"] = ""
@@ -293,31 +286,25 @@ def summarize_by_group(rows):
 
         summary_rows.append(out)
 
-    summary_rows.sort(key=lambda x: (x["length"], x["size"], x["method"]))
+    summary_rows.sort(key=lambda item: (item["length"], item["size"], item["method"]))
 
     return summary_rows
 
 
 def summarize_deltas(rows):
-    """
-    Per experiment and seed:
-        delta = proposed fitness - ABC-only fitness
-    """
-
     proposed_name = "Reference-free Transformer-generated pool + ABC"
     control_name = "ABC-only control"
 
     by_exp_seed = {}
 
-    for r in rows:
+    for row in rows:
         key = (
-            r["experiment"],
-            int(r["length"]),
-            int(r["size"]),
-            int(r["seed"]),
+            row["experiment"],
+            int(row["length"]),
+            int(row["size"]),
+            int(row["seed"]),
         )
-
-        by_exp_seed.setdefault(key, {})[r["method"]] = r
+        by_exp_seed.setdefault(key, {})[row["method"]] = row
 
     delta_raw_rows = []
 
@@ -330,13 +317,19 @@ def summarize_deltas(rows):
         control = methods[control_name]
         proposed = methods[proposed_name]
 
-        f_control = to_float(control.get("fitness", ""))
-        f_proposed = to_float(proposed.get("fitness", ""))
+        fitness_control = to_float(control.get("fitness", ""))
+        fitness_proposed = to_float(proposed.get("fitness", ""))
 
         avg_control = to_float(control.get("avg_hamming", ""))
         avg_proposed = to_float(proposed.get("avg_hamming", ""))
 
-        if f_control is None or f_proposed is None:
+        min_control = to_float(control.get("min_hamming", ""))
+        min_proposed = to_float(proposed.get("min_hamming", ""))
+
+        collision_control = to_float(control.get("collision_pairs_radius1", ""))
+        collision_proposed = to_float(proposed.get("collision_pairs_radius1", ""))
+
+        if fitness_control is None or fitness_proposed is None:
             continue
 
         delta_raw_rows.append(
@@ -345,9 +338,16 @@ def summarize_deltas(rows):
                 "length": length,
                 "size": size,
                 "seed": seed,
-                "fitness_abc_only": f_control,
-                "fitness_proposed": f_proposed,
-                "delta_fitness": f_proposed - f_control,
+                "fitness_abc_only": fitness_control,
+                "fitness_proposed": fitness_proposed,
+                "delta_fitness": fitness_proposed - fitness_control,
+                "min_hamming_abc_only": min_control,
+                "min_hamming_proposed": min_proposed,
+                "delta_min_hamming": (
+                    min_proposed - min_control
+                    if min_control is not None and min_proposed is not None
+                    else ""
+                ),
                 "avg_hamming_abc_only": avg_control,
                 "avg_hamming_proposed": avg_proposed,
                 "delta_avg_hamming": (
@@ -355,28 +355,53 @@ def summarize_deltas(rows):
                     if avg_control is not None and avg_proposed is not None
                     else ""
                 ),
-                "proposed_better": int(f_proposed > f_control),
+                "collision_pairs_abc_only": collision_control,
+                "collision_pairs_proposed": collision_proposed,
+                "delta_collision_pairs_radius1": (
+                    collision_proposed - collision_control
+                    if collision_control is not None and collision_proposed is not None
+                    else ""
+                ),
+                "proposed_better": int(fitness_proposed > fitness_control),
             }
         )
 
     grouped = {}
 
-    for r in delta_raw_rows:
-        key = (r["experiment"], r["length"], r["size"])
-        grouped.setdefault(key, []).append(r)
+    for row in delta_raw_rows:
+        key = (row["experiment"], row["length"], row["size"])
+        grouped.setdefault(key, []).append(row)
 
     delta_summary = []
 
     for key, group_rows in grouped.items():
         experiment, length, size = key
 
-        d_fit = [to_float(r["delta_fitness"]) for r in group_rows]
-        d_fit = [v for v in d_fit if v is not None]
+        delta_fitness = [to_float(row["delta_fitness"]) for row in group_rows]
+        delta_fitness = [value for value in delta_fitness if value is not None]
 
-        d_avg = [to_float(r["delta_avg_hamming"]) for r in group_rows]
-        d_avg = [v for v in d_avg if v is not None]
+        delta_min_hamming = [
+            to_float(row["delta_min_hamming"]) for row in group_rows
+        ]
+        delta_min_hamming = [
+            value for value in delta_min_hamming if value is not None
+        ]
 
-        wins = sum(int(r["proposed_better"]) for r in group_rows)
+        delta_avg_hamming = [
+            to_float(row["delta_avg_hamming"]) for row in group_rows
+        ]
+        delta_avg_hamming = [
+            value for value in delta_avg_hamming if value is not None
+        ]
+
+        delta_collision = [
+            to_float(row["delta_collision_pairs_radius1"]) for row in group_rows
+        ]
+        delta_collision = [
+            value for value in delta_collision if value is not None
+        ]
+
+        wins = sum(int(row["proposed_better"]) for row in group_rows)
 
         delta_summary.append(
             {
@@ -386,41 +411,54 @@ def summarize_deltas(rows):
                 "n_seeds": len(group_rows),
                 "proposed_wins": wins,
                 "abc_only_wins": len(group_rows) - wins,
-                "delta_fitness_mean": mean(d_fit) if d_fit else "",
-                "delta_fitness_std": safe_stdev(d_fit) if d_fit else "",
-                "delta_fitness_min": min(d_fit) if d_fit else "",
-                "delta_fitness_max": max(d_fit) if d_fit else "",
-                "delta_avg_hamming_mean": mean(d_avg) if d_avg else "",
-                "delta_avg_hamming_std": safe_stdev(d_avg) if d_avg else "",
-                "delta_avg_hamming_min": min(d_avg) if d_avg else "",
-                "delta_avg_hamming_max": max(d_avg) if d_avg else "",
+                "delta_fitness_mean": mean(delta_fitness) if delta_fitness else "",
+                "delta_fitness_std": (
+                    safe_stdev(delta_fitness) if delta_fitness else ""
+                ),
+                "delta_fitness_min": min(delta_fitness) if delta_fitness else "",
+                "delta_fitness_max": max(delta_fitness) if delta_fitness else "",
+                "delta_min_hamming_mean": (
+                    mean(delta_min_hamming) if delta_min_hamming else ""
+                ),
+                "delta_min_hamming_std": (
+                    safe_stdev(delta_min_hamming) if delta_min_hamming else ""
+                ),
+                "delta_avg_hamming_mean": (
+                    mean(delta_avg_hamming) if delta_avg_hamming else ""
+                ),
+                "delta_avg_hamming_std": (
+                    safe_stdev(delta_avg_hamming) if delta_avg_hamming else ""
+                ),
+                "delta_collision_pairs_radius1_mean": (
+                    mean(delta_collision) if delta_collision else ""
+                ),
             }
         )
 
-    delta_summary.sort(key=lambda x: (x["length"], x["size"]))
+    delta_summary.sort(key=lambda item: (item["length"], item["size"]))
 
     return delta_raw_rows, delta_summary
 
 
-def main():
-    root = Path.cwd()
-    script_path = root / SCRIPT_NAME
+# ============================================================
+# Main
+# ============================================================
 
-    if not script_path.exists():
-        raise FileNotFoundError(
-            f"{SCRIPT_NAME} not found in {root}. "
-            "Place this runner script in the same folder as "
-            "barcode_abc_reference_free_transformer.py."
-        )
+def main():
+    if not MAIN_SCRIPT.exists():
+        raise FileNotFoundError(f"Main script not found: {MAIN_SCRIPT}")
 
     all_rows = []
 
     print("=" * 80)
     print("PROBLEM-SIZE MATRIX: REFERENCE-FREE TRANSFORMER + ABC")
     print("=" * 80)
-    print(f"Script : {script_path}")
-    print(f"Seeds  : {SEEDS}")
+    print(f"Main script: {MAIN_SCRIPT}")
+    print(f"Raw output directory: {RAW_DIR}")
+    print(f"Summary directory: {RESULTS_DIR}")
+    print(f"Seeds: {SEEDS}")
     print("Experiments:")
+
     for exp in EXPERIMENTS:
         print(
             f"  {exp['tag']}: "
@@ -429,15 +467,16 @@ def main():
             f"seed_pool={exp['seed_pool_size']}, "
             f"filter_sample={exp['filter_sample_size']}"
         )
+
     print("=" * 80)
 
-    global_t0 = time.time()
+    global_start = time.time()
 
     for exp in EXPERIMENTS:
         for seed in SEEDS:
-            out_dir = f"{BASE_OUT}_{exp['tag']}_seed_{seed}"
+            out_name = f"{BASE_OUT}_{exp['tag']}_seed_{seed}"
+            out_path = RAW_DIR / out_name
 
-            out_path = root / out_dir
             comparison_path = out_path / "comparison_summary.csv"
             best_summary_path = out_path / "best_summary.json"
 
@@ -447,16 +486,16 @@ def main():
                 and best_summary_path.exists()
             ):
                 print("\n" + "-" * 80)
-                print(f"Skipping completed run: {out_dir}")
+                print(f"Skipping completed run: {out_name}")
                 print("-" * 80)
 
-                collected = collect_run_rows(root, out_dir, exp, seed)
+                collected = collect_run_rows(out_path, exp, seed)
                 all_rows.extend(collected)
                 continue
 
             cmd = [
                 sys.executable,
-                str(script_path),
+                str(MAIN_SCRIPT),
                 "--length", str(exp["length"]),
                 "--size", str(exp["size"]),
                 "--raw-pool-size", str(exp["raw_pool_size"]),
@@ -464,7 +503,7 @@ def main():
                 "--filter-sample-size", str(exp["filter_sample_size"]),
                 *COMMON_ARGS,
                 "--seed", str(seed),
-                "--out", out_dir,
+                "--out", str(out_path),
             ]
 
             print("\n" + "-" * 80)
@@ -472,12 +511,12 @@ def main():
                 f"Running {exp['tag']} | "
                 f"length={exp['length']} size={exp['size']} seed={seed}"
             )
-            print(f"Output folder = {out_dir}")
+            print(f"Output folder: {out_path}")
             print("-" * 80)
 
             completed = subprocess.run(
                 cmd,
-                cwd=str(root),
+                cwd=str(BASE_DIR),
                 text=True,
                 capture_output=True,
             )
@@ -490,17 +529,16 @@ def main():
                     f"Run failed for {exp['tag']} seed={seed}"
                 )
 
-            collected = collect_run_rows(root, out_dir, exp, seed)
+            collected = collect_run_rows(out_path, exp, seed)
             all_rows.extend(collected)
 
-            # Save partial progress after every run.
-            partial_csv = root / "matrix_reference_free_transformer_all_runs_partial.csv"
+            partial_csv = RESULTS_DIR / "matrix_reference_free_transformer_all_runs_partial.csv"
             write_csv(partial_csv, all_rows)
 
-    all_runs_csv = root / "matrix_reference_free_transformer_all_runs.csv"
-    group_summary_csv = root / "matrix_reference_free_transformer_group_summary.csv"
-    delta_raw_csv = root / "matrix_reference_free_transformer_delta_raw.csv"
-    delta_summary_csv = root / "matrix_reference_free_transformer_delta_summary.csv"
+    all_runs_csv = RESULTS_DIR / "matrix_reference_free_transformer_all_runs.csv"
+    group_summary_csv = RESULTS_DIR / "matrix_reference_free_transformer_group_summary.csv"
+    delta_raw_csv = RESULTS_DIR / "matrix_reference_free_transformer_delta_raw.csv"
+    delta_summary_csv = RESULTS_DIR / "matrix_reference_free_transformer_delta_summary.csv"
 
     write_csv(all_runs_csv, all_rows)
 
@@ -511,7 +549,7 @@ def main():
     write_csv(delta_raw_csv, delta_raw)
     write_csv(delta_summary_csv, delta_summary)
 
-    total_time = time.time() - global_t0
+    total_time = time.time() - global_start
 
     print("\n" + "=" * 80)
     print("MATRIX RUNS COMPLETED")
@@ -529,15 +567,20 @@ def main():
         f"{'d_fitness_mean':>16s} {'d_avgD_mean':>14s}"
     )
 
-    for r in delta_summary:
+    for row in delta_summary:
         print(
-            f"{str(r['experiment']):12s} "
-            f"{int(r['n_seeds']):3d} "
-            f"{int(r['proposed_wins']):6d} "
-            f"{float(r['delta_fitness_mean']):16.6f} "
-            f"{float(r['delta_avg_hamming_mean']):14.6f}"
+            f"{str(row['experiment']):12s} "
+            f"{int(row['n_seeds']):3d} "
+            f"{int(row['proposed_wins']):6d} "
+            f"{float(row['delta_fitness_mean']):16.6f} "
+            f"{float(row['delta_avg_hamming_mean']):14.6f}"
         )
 
 
 if __name__ == "__main__":
     main()
+
+
+
+Also mention if you want to be extra robust, add a line in README "run_matrix..." writes raw outputs to `results/raw_runs/problem_size_matrix`. 
+Let's final. 
