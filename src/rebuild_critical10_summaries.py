@@ -1,21 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue May  5 10:01:05 2026
-
-@author: kaya-
-"""
-
-# -*- coding: utf-8 -*-
-"""
 rebuild_critical10_summaries.py
 
-Rebuilds correct summary CSV files from already completed critical 10-seed runs.
+Rebuilds summary CSV files from completed critical 10-seed experiment folders.
 
-This script DOES NOT rerun experiments.
-It only reads existing output folders:
+This script does not rerun experiments. It reads existing output folders matching:
 
-critical10_reference_free_transformer_L12_N64_seed_*
-critical10_reference_free_transformer_L12_N128_seed_*
+- critical10_reference_free_transformer_L12_N64_seed_*
+- critical10_reference_free_transformer_L12_N128_seed_*
 
 and reconstructs:
 
@@ -24,11 +16,8 @@ and reconstructs:
 - critical10_delta_raw_FIXED.csv
 - critical10_delta_summary_FIXED.csv
 
-Spyder run:
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/rebuild_critical10_summaries.py',
-    wdir='C:/Users/kaya-/Desktop/ABC'
-)
+Example command:
+python src/rebuild_critical10_summaries.py
 """
 
 import json
@@ -38,8 +27,9 @@ import numpy as np
 import pandas as pd
 
 
-BASE_DIR = Path(r"C:/Users/kaya-/Desktop/ABC")
-SUMMARY_DIR = BASE_DIR / "critical_10seed_summaries"
+BASE_DIR = Path(__file__).resolve().parents[1]
+RESULTS_DIR = BASE_DIR / "results"
+SUMMARY_DIR = RESULTS_DIR / "critical_10seed_summaries"
 SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
 FOLDER_PATTERNS = [
@@ -190,13 +180,21 @@ def read_abc_only_from_comparison_or_log(folder):
 def collect_all_runs():
     folders = []
 
-    for pattern in FOLDER_PATTERNS:
-        folders.extend(sorted(BASE_DIR.glob(pattern)))
+    search_dirs = [
+    RESULTS_DIR,
+    RESULTS_DIR / "raw_runs",
+    BASE_DIR,
+]
+
+for pattern in FOLDER_PATTERNS:
+    for search_dir in search_dirs:
+        if search_dir.exists():
+            folders.extend(sorted(search_dir.glob(pattern)))
 
     if not folders:
         raise FileNotFoundError(
-            "No critical10 output folders found. "
-            "Check BASE_DIR and folder names."
+            "No critical 10-seed output folders found. "
+            "Check RESULTS_DIR, raw run folders, and folder names."
         )
 
     rows = []
