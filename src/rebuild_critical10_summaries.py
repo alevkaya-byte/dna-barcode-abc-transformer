@@ -38,7 +38,7 @@ FOLDER_PATTERNS = [
 ]
 
 
-def parse_folder_name(folder_name):
+def parse_folder_name(folder_name: str):
     """
     Example:
     critical10_reference_free_transformer_L12_N64_seed_20260428
@@ -50,15 +50,16 @@ def parse_folder_name(folder_name):
     size = None
     seed = None
 
-    for p in parts:
-        if p.startswith("L") and p[1:].isdigit():
-            length = int(p[1:])
-        if p.startswith("N") and p[1:].isdigit():
-            size = int(p[1:])
+    for part in parts:
+        if part.startswith("L") and part[1:].isdigit():
+            length = int(part[1:])
+        elif part.startswith("N") and part[1:].isdigit():
+            size = int(part[1:])
 
     if "seed" in parts:
-        idx = parts.index("seed")
-        seed = int(parts[idx + 1])
+        seed_index = parts.index("seed")
+        if seed_index + 1 < len(parts):
+            seed = int(parts[seed_index + 1])
 
     if length is None or size is None or seed is None:
         raise ValueError(f"Could not parse folder name: {folder_name}")
@@ -66,23 +67,31 @@ def parse_folder_name(folder_name):
     return length, size, seed
 
 
-def read_json(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def read_json(path: Path):
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
-def read_proposed_from_best_summary(folder):
+def read_proposed_from_best_summary(folder: Path):
     path = folder / "best_summary.json"
 
     if not path.exists():
         raise FileNotFoundError(f"Missing best_summary.json: {folder}")
 
-    js = read_json(path)
+    data = read_json(path)
 
-    best = js.get("best_metrics", {})
-    pool = js.get("candidate_pool_summary", {})
+    best = data.get("best_metrics", {})
+    pool = data.get("candidate_pool_summary", {})
 
-    row = {
+    runtime_seconds = data.get("runtime_seconds", np.nan)
+    pool_runtime = pool.get("runtime_total_seconds", np.nan)
+
+    if np.isnan(runtime_seconds) or np.isnan(pool_runtime):
+        total_runtime = np.nan
+    else:
+        total_runtime = runtime_seconds + pool_runtime
+
+    return {
         "method": "Proposed",
         "fitness": best.get("fitness", np.nan),
         "min_hamming": best.get("min_hamming", np.nan),
@@ -94,18 +103,13 @@ def read_proposed_from_best_summary(folder):
         "kmer_entropy": best.get("kmer_entropy", np.nan),
         "valid_gc_fraction": best.get("valid_gc_fraction", np.nan),
         "valid_hp_fraction": best.get("valid_hp_fraction", np.nan),
-        "runtime_seconds": js.get("runtime_seconds", np.nan),
-        "candidate_pool_runtime_seconds": pool.get("runtime_total_seconds", np.nan),
-        "total_runtime_seconds": (
-            js.get("runtime_seconds", 0.0)
-            + pool.get("runtime_total_seconds", 0.0)
-        ),
+        "runtime_seconds": runtime_seconds,
+        "candidate_pool_runtime_seconds": pool_runtime,
+        "total_runtime_seconds": total_runtime,
     }
 
-    return row
 
-
-def read_abc_only_from_comparison_or_log(folder):
+def read_abc_only_from_comparison_or_log(folder: Path):
     comparison_path = folder / "comparison_summary.csv"
     log_path = folder / "run_log_abc_only_control.csv"
 
@@ -124,28 +128,28 @@ def read_abc_only_from_comparison_or_log(folder):
             abc_rows = df[mask]
 
             if len(abc_rows) > 0:
-                r = abc_rows.iloc[0].to_dict()
+                row = abc_rows.iloc[0].to_dict()
 
                 return {
                     "method": "ABC-only",
-                    "fitness": r.get("fitness", np.nan),
-                    "min_hamming": r.get("min_hamming", np.nan),
-                    "avg_hamming": r.get("avg_hamming", np.nan),
-                    "gc_penalty": r.get("gc_penalty", np.nan),
-                    "homopolymer_penalty": r.get("homopolymer_penalty", np.nan),
-                    "collision_pairs_radius1": r.get(
+                    "fitness": row.get("fitness", np.nan),
+                    "min_hamming": row.get("min_hamming", np.nan),
+                    "avg_hamming": row.get("avg_hamming", np.nan),
+                    "gc_penalty": row.get("gc_penalty", np.nan),
+                    "homopolymer_penalty": row.get("homopolymer_penalty", np.nan),
+                    "collision_pairs_radius1": row.get(
                         "collision_pairs_radius1", np.nan
                     ),
-                    "duplicate_count": r.get("duplicate_count", np.nan),
-                    "kmer_entropy": r.get("kmer_entropy", np.nan),
-                    "valid_gc_fraction": r.get("valid_gc_fraction", np.nan),
-                    "valid_hp_fraction": r.get("valid_hp_fraction", np.nan),
-                    "runtime_seconds": r.get("runtime_seconds", np.nan),
+                    "duplicate_count": row.get("duplicate_count", np.nan),
+                    "kmer_entropy": row.get("kmer_entropy", np.nan),
+                    "valid_gc_fraction": row.get("valid_gc_fraction", np.nan),
+                    "valid_hp_fraction": row.get("valid_hp_fraction", np.nan),
+                    "runtime_seconds": row.get("runtime_seconds", np.nan),
                     "candidate_pool_runtime_seconds": np.nan,
-                    "total_runtime_seconds": r.get("runtime_seconds", np.nan),
+                    "total_runtime_seconds": row.get("runtime_seconds", np.nan),
                 }
 
-    # Fallback: use last row of ABC-only run log.
+    # Fallback: use the last row of ABC-only run log.
     if not log_path.exists():
         raise FileNotFoundError(f"Missing ABC-only log: {folder}")
 
@@ -154,18 +158,18 @@ def read_abc_only_from_comparison_or_log(folder):
     if df.empty:
         raise ValueError(f"Empty ABC-only log: {folder}")
 
-    r = df.iloc[-1].to_dict()
+    row = df.iloc[-1].to_dict()
 
     return {
         "method": "ABC-only",
-        "fitness": r.get("best_fitness", r.get("fitness", np.nan)),
-        "min_hamming": r.get("min_hamming", r.get("minD", np.nan)),
-        "avg_hamming": r.get("avg_hamming", r.get("avgD", np.nan)),
+        "fitness": row.get("best_fitness", row.get("fitness", np.nan)),
+        "min_hamming": row.get("min_hamming", row.get("minD", np.nan)),
+        "avg_hamming": row.get("avg_hamming", row.get("avgD", np.nan)),
         "gc_penalty": np.nan,
         "homopolymer_penalty": np.nan,
-        "collision_pairs_radius1": r.get(
+        "collision_pairs_radius1": row.get(
             "collision_pairs_radius1",
-            r.get("coll", r.get("collision", np.nan)),
+            row.get("coll", row.get("collision", np.nan)),
         ),
         "duplicate_count": np.nan,
         "kmer_entropy": np.nan,
@@ -175,7 +179,9 @@ def read_abc_only_from_comparison_or_log(folder):
         "candidate_pool_runtime_seconds": np.nan,
         "total_runtime_seconds": np.nan,
     }
-    def collect_all_runs():
+
+
+def collect_all_runs():
     folders = []
 
     search_dirs = [
@@ -189,46 +195,17 @@ def read_abc_only_from_comparison_or_log(folder):
             if search_dir.exists():
                 folders.extend(sorted(search_dir.glob(pattern)))
 
-    if not folders:
-        raise FileNotFoundError(
-            "No critical 10-seed output folders found. "
-            "Check RESULTS_DIR, raw run folders, and folder names."
-        )
-
-    rows = []
-
-    print("=" * 80)
-    print("FOUND OUTPUT FOLDERS")
-    print("=" * 80)
+    # Remove possible duplicates while preserving order.
+    unique_folders = []
+    seen = set()
 
     for folder in folders:
-        if not folder.is_dir():
-            continue
+        resolved = folder.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique_folders.append(folder)
 
-        print(folder.name)
-
-        length, size, seed = parse_folder_name(folder.name)
-
-        proposed = read_proposed_from_best_summary(folder)
-        abc_only = read_abc_only_from_comparison_or_log(folder)
-
-        for row in [proposed, abc_only]:
-            row.update({
-                "length": length,
-                "size": size,
-                "seed": seed,
-                "output_folder": folder.name,
-            })
-
-            rows.append(row)
-
-    df = pd.DataFrame(rows)
-
-    first_cols = ["length", "size", "seed", "method"]
-    other_cols = [c for c in df.columns if c not in first_cols]
-    df = df[first_cols + other_cols]
-
-    return df
+    folders = unique_folders
 
     if not folders:
         raise FileNotFoundError(
@@ -254,26 +231,26 @@ def read_abc_only_from_comparison_or_log(folder):
         abc_only = read_abc_only_from_comparison_or_log(folder)
 
         for row in [proposed, abc_only]:
-            row.update({
-                "length": length,
-                "size": size,
-                "seed": seed,
-                "output_folder": folder.name,
-            })
-
+            row.update(
+                {
+                    "length": length,
+                    "size": size,
+                    "seed": seed,
+                    "output_folder": folder.name,
+                }
+            )
             rows.append(row)
 
     df = pd.DataFrame(rows)
 
-    # Order columns
     first_cols = ["length", "size", "seed", "method"]
-    other_cols = [c for c in df.columns if c not in first_cols]
+    other_cols = [col for col in df.columns if col not in first_cols]
     df = df[first_cols + other_cols]
 
     return df
 
 
-def make_group_summary(df):
+def make_group_summary(df: pd.DataFrame):
     metrics = [
         "fitness",
         "min_hamming",
@@ -288,11 +265,10 @@ def make_group_summary(df):
         "total_runtime_seconds",
     ]
 
-    available = [m for m in metrics if m in df.columns]
+    available = [metric for metric in metrics if metric in df.columns]
 
     summary = (
-        df
-        .groupby(["length", "size", "method"])[available]
+        df.groupby(["length", "size", "method"])[available]
         .agg(["mean", "std", "min", "max"])
         .reset_index()
     )
@@ -305,12 +281,12 @@ def make_group_summary(df):
     return summary
 
 
-def make_delta_summary(df):
+def make_delta_summary(df: pd.DataFrame):
     proposed = df[df["method"] == "Proposed"].copy()
-    abc = df[df["method"] == "ABC-only"].copy()
+    abc_only = df[df["method"] == "ABC-only"].copy()
 
     merged = proposed.merge(
-        abc,
+        abc_only,
         on=["length", "size", "seed"],
         suffixes=("_proposed", "_abc_only"),
         how="inner",
@@ -323,16 +299,21 @@ def make_delta_summary(df):
         "collision_pairs_radius1",
     ]
 
-    for m in metrics:
-        p = f"{m}_proposed"
-        a = f"{m}_abc_only"
+    for metric in metrics:
+        proposed_col = f"{metric}_proposed"
+        abc_col = f"{metric}_abc_only"
 
-        if p in merged.columns and a in merged.columns:
-            merged[f"delta_{m}"] = merged[p] - merged[a]
+        if proposed_col in merged.columns and abc_col in merged.columns:
+            merged[f"delta_{metric}"] = (
+                merged[proposed_col] - merged[abc_col]
+            )
 
-    merged["proposed_better_fitness"] = (
-        merged["delta_fitness"] > 0
-    ).astype(int)
+    if "delta_fitness" in merged.columns:
+        merged["proposed_better_fitness"] = (
+            merged["delta_fitness"] > 0
+        ).astype(int)
+    else:
+        merged["proposed_better_fitness"] = np.nan
 
     delta_cols = [
         "delta_fitness",
@@ -342,9 +323,10 @@ def make_delta_summary(df):
         "proposed_better_fitness",
     ]
 
+    available_delta_cols = [col for col in delta_cols if col in merged.columns]
+
     summary = (
-        merged
-        .groupby(["length", "size"])[delta_cols]
+        merged.groupby(["length", "size"])[available_delta_cols]
         .agg(["mean", "std", "min", "max", "sum"])
         .reset_index()
     )
