@@ -18,21 +18,13 @@ This file intentionally avoids PRNG/keystream/randomness-test terminology.
 The Transformer is used only as a reference-free DNA candidate generator.
 The final barcode library is selected and optimized by ABC at the library level.
 
-Recommended Spyder run
-----------------------
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/barcode_abc_reference_free_transformer.py',
-    wdir='C:/Users/kaya-/Desktop/ABC',
-    args='--length 12 --size 64 --iters 20 --foods 12 --raw-pool-size 1024 --seed-pool-size 256 --filter-sample-size 100 --run-abc-control --out ref_transformer_abc_test'
-)
+Example command
+---------------
+python src/barcode_abc_reference_free_transformer.py --length 12 --size 64 --iters 20 --foods 12 --raw-pool-size 1024 --seed-pool-size 256 --filter-sample-size 100 --run-abc-control --out ref_transformer_abc_test
 
-Faster first test
------------------
-runfile(
-    'C:/Users/kaya-/Desktop/ABC/barcode_abc_reference_free_transformer.py',
-    wdir='C:/Users/kaya-/Desktop/ABC',
-    args='--length 12 --size 64 --iters 20 --foods 12 --raw-pool-size 512 --seed-pool-size 256 --filter-sample-size 80 --run-abc-control --out ref_transformer_abc_fast'
-)
+Faster test command
+-------------------
+python src/barcode_abc_reference_free_transformer.py --length 12 --size 64 --iters 20 --foods 12 --raw-pool-size 512 --seed-pool-size 256 --filter-sample-size 80 --run-abc-control --out ref_transformer_abc_fast
 """
 
 import argparse
