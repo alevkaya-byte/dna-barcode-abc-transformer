@@ -175,21 +175,60 @@ def read_abc_only_from_comparison_or_log(folder):
         "candidate_pool_runtime_seconds": np.nan,
         "total_runtime_seconds": np.nan,
     }
-
-
-def collect_all_runs():
+    def collect_all_runs():
     folders = []
 
     search_dirs = [
-    RESULTS_DIR,
-    RESULTS_DIR / "raw_runs",
-    BASE_DIR,
-]
+        RESULTS_DIR,
+        RESULTS_DIR / "raw_runs",
+        BASE_DIR,
+    ]
 
-for pattern in FOLDER_PATTERNS:
-    for search_dir in search_dirs:
-        if search_dir.exists():
-            folders.extend(sorted(search_dir.glob(pattern)))
+    for pattern in FOLDER_PATTERNS:
+        for search_dir in search_dirs:
+            if search_dir.exists():
+                folders.extend(sorted(search_dir.glob(pattern)))
+
+    if not folders:
+        raise FileNotFoundError(
+            "No critical 10-seed output folders found. "
+            "Check RESULTS_DIR, raw run folders, and folder names."
+        )
+
+    rows = []
+
+    print("=" * 80)
+    print("FOUND OUTPUT FOLDERS")
+    print("=" * 80)
+
+    for folder in folders:
+        if not folder.is_dir():
+            continue
+
+        print(folder.name)
+
+        length, size, seed = parse_folder_name(folder.name)
+
+        proposed = read_proposed_from_best_summary(folder)
+        abc_only = read_abc_only_from_comparison_or_log(folder)
+
+        for row in [proposed, abc_only]:
+            row.update({
+                "length": length,
+                "size": size,
+                "seed": seed,
+                "output_folder": folder.name,
+            })
+
+            rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    first_cols = ["length", "size", "seed", "method"]
+    other_cols = [c for c in df.columns if c not in first_cols]
+    df = df[first_cols + other_cols]
+
+    return df
 
     if not folders:
         raise FileNotFoundError(
