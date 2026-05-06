@@ -51,7 +51,6 @@ from barcode_abc_reference_free_transformer import (
     evaluate_library,
     metrics_to_dict,
     gc_fraction,
-    max_homopolymer_run,
     hamming,
     kmer_counts,
     gc_penalty,
