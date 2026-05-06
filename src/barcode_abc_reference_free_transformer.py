@@ -10,14 +10,6 @@ Important terminology
 This file intentionally avoids PRNG/keystream/randomness-test terminology.
 The Transformer is used only as a reference-free DNA candidate generator.
 The final barcode library is selected and optimized by ABC at the library level.
-...
-"""
-
-Important terminology
----------------------
-This file intentionally avoids PRNG/keystream/randomness-test terminology.
-The Transformer is used only as a reference-free DNA candidate generator.
-The final barcode library is selected and optimized by ABC at the library level.
 
 Example command
 ---------------
