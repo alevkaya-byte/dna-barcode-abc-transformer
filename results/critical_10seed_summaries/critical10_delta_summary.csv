@@ -1,0 +1,3 @@
+﻿length,size,delta_fitness_mean,delta_fitness_std,delta_fitness_min,delta_fitness_max,delta_min_hamming_mean,delta_min_hamming_std,delta_min_hamming_min,delta_min_hamming_max,delta_avg_hamming_mean,delta_avg_hamming_std,delta_avg_hamming_min,delta_avg_hamming_max,delta_collision_pairs_radius1_mean,delta_collision_pairs_radius1_std,delta_collision_pairs_radius1_min,delta_collision_pairs_radius1_max
+12,64,,,,,,,,,,,,,,,,
+12,128,,,,,,,,,,,,,,,,
